@@ -1,5 +1,7 @@
 import streamlit as st
 from groq import Groq
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # Page configuration
 st.set_page_config(
@@ -53,13 +55,38 @@ if not GROQ_API_KEY:
 
 client = Groq(api_key=GROQ_API_KEY)
 
+# Initialize Firebase Firestore Securely
+if not firebase_admin._apps:
+    try:
+        firebase_creds = dict(st.secrets["firebase"])
+        # Fix newline formatting for private keys in TOML if necessary
+        if "\\n" in firebase_creds["private_key"]:
+            firebase_creds["private_key"] = firebase_creds["private_key"].replace("\\n", "\n")
+        cred = credentials.Certificate(firebase_creds)
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        st.error(f"⚠️ Firebase Initialization Error: {e}")
+        st.stop()
+
+db = firestore.client()
+CHAT_ROOM_ID = "default_user_session"  # Can be expanded later for multi-user login
+
 # Header Section
 st.title("💬 Ping AI Assistant")
-st.caption("Your friendly, fast, and intelligent daily companion.")
+st.caption("Your friendly, fast, and intelligent daily companion (Cloud-Synced).")
 
-# Initialize session state for messages
+# Initialize session state and load from Firestore if empty
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    try:
+        # Fetch messages ordered chronologically from Firestore
+        docs = db.collection("chats").document(CHAT_ROOM_ID).collection("messages").order_by("timestamp").stream()
+        for doc in docs:
+            data = doc.to_dict()
+            st.session_state.messages.append({"role": data["role"], "content": data["content"]})
+    except Exception as e:
+        # Fallback if collection doesn't exist yet
+        pass
 
 # Sidebar Controls & Model Selector
 with st.sidebar:
@@ -90,12 +117,22 @@ with st.sidebar:
     st.markdown("---")
     st.header("⚙️ Controls")
     if st.button("🧹 Clear Chat History", type="secondary"):
+        # Clear session state
         st.session_state.messages = []
+        # Clear Firestore collection for this session
+        try:
+            batch = db.batch()
+            docs = db.collection("chats").document(CHAT_ROOM_ID).collection("messages").stream()
+            for doc in docs:
+                batch.delete(doc.reference)
+            batch.commit()
+        except Exception as e:
+            st.error(f"Error clearing cloud history: {e}")
         st.rerun()
 
     st.markdown("---")
     st.caption(f"Active Model: {selected_model_name}")
-    st.caption("Status: 🟢 Online & Optimized")
+    st.caption("Status: 🟢 Online & Cloud-Synced")
 
 # Display historical messages
 for msg in st.session_state.messages:
@@ -112,7 +149,14 @@ if user_input := st.chat_input("Type your message here..."):
     # Render user message
     with st.chat_message("user"):
         st.markdown(user_input)
+    
+    # Append & Save User Message to Firestore
+    user_msg_data = {"role": "user", "content": active_payload, "timestamp": firestore.SERVER_TIMESTAMP}
     st.session_state.messages.append({"role": "user", "content": active_payload})
+    try:
+        db.collection("chats").document(CHAT_ROOM_ID).collection("messages").add(user_msg_data)
+    except Exception as e:
+        st.warning(f"Could not save message to cloud: {e}")
 
     # Fast intent classification (Gatekeeper) with robust error handling
     gatekeeper_prompt = (
@@ -130,7 +174,6 @@ if user_input := st.chat_input("Type your message here..."):
         if gatekeeper_res.choices and gatekeeper_res.choices[0].message.content:
             routing_decision = gatekeeper_res.choices[0].message.content.strip().upper()
     except Exception as e:
-        # Fallback gracefully if gatekeeper fails
         routing_decision = "FAST"
 
     internal_thought = ""
@@ -183,4 +226,10 @@ if user_input := st.chat_input("Type your message here..."):
             response_placeholder.error(full_response)
         
     st.session_state.messages.append({"role": "assistant", "content": full_response})
+    try:
+        asst_msg_data = {"role": "assistant", "content": full_response, "timestamp": firestore.SERVER_TIMESTAMP}
+        db.collection("chats").document(CHAT_ROOM_ID).collection("messages").add(asst_msg_data)
+    except Exception as e:
+        st.warning(f"Could not save response to cloud: {e}")
+
     st.rerun()
