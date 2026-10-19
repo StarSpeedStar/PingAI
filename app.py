@@ -67,7 +67,7 @@ with st.sidebar:
     model_options = {
         "GPT-OSS 20B": "openai/gpt-oss-20b",
         "Qwen3.8-27b": "qwen/qwen3.8-27b",
-        "Llama 3.1 8B": "meta-llama/Llama-3.1-8B-Instruct:novita",
+        "Llama 3.1 8B": "meta-llama/Llama-3.1-8B-Instruct",
         "GPT-OSS 120B": "openai/gpt-oss-120b"
     }
     selected_model_name = st.selectbox("Choose AI Model:", list(model_options.keys()))
