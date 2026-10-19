@@ -59,7 +59,6 @@ client = Groq(api_key=GROQ_API_KEY)
 if not firebase_admin._apps:
     try:
         firebase_creds = dict(st.secrets["firebase"])
-        # Fix newline formatting for private keys in TOML if necessary
         if "\\n" in firebase_creds["private_key"]:
             firebase_creds["private_key"] = firebase_creds["private_key"].replace("\\n", "\n")
         cred = credentials.Certificate(firebase_creds)
@@ -69,23 +68,29 @@ if not firebase_admin._apps:
         st.stop()
 
 db = firestore.client()
-CHAT_ROOM_ID = "default_user_session"  # Can be expanded later for multi-user login
+CHAT_ROOM_ID = "default_user_session"
 
 # Header Section
 st.title("💬 Ping AI Assistant")
 st.caption("Your friendly, fast, and intelligent daily companion (Cloud-Synced).")
 
-# Initialize session state and load from Firestore if empty
+# Initialize session state and safely load from Firestore
 if "messages" not in st.session_state:
     st.session_state.messages = []
     try:
-        # Fetch messages ordered chronologically from Firestore
-        docs = db.collection("chats").document(CHAT_ROOM_ID).collection("messages").order_by("timestamp").stream()
+        docs = db.collection("chats").document(CHAT_ROOM_ID).collection("messages").stream()
+        fetched_msgs = []
         for doc in docs:
             data = doc.to_dict()
+            fetched_msgs.append(data)
+        
+        # Sort chronologically in Python to avoid database index errors
+        fetched_msgs.sort(key=lambda x: x.get("timestamp", 0) if x.get("timestamp") else 0)
+        
+        for data in fetched_msgs:
             st.session_state.messages.append({"role": data["role"], "content": data["content"]})
     except Exception as e:
-        # Fallback if collection doesn't exist yet
+        # Fallback silently if collection is empty or unreachable
         pass
 
 # Sidebar Controls & Model Selector
@@ -117,9 +122,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("⚙️ Controls")
     if st.button("🧹 Clear Chat History", type="secondary"):
-        # Clear session state
         st.session_state.messages = []
-        # Clear Firestore collection for this session
         try:
             batch = db.batch()
             docs = db.collection("chats").document(CHAT_ROOM_ID).collection("messages").stream()
@@ -225,6 +228,7 @@ if user_input := st.chat_input("Type your message here..."):
             full_response = f"⚠️ Request couldn't be completed with model `{selected_model_name}`. Error details: {str(e)}"
             response_placeholder.error(full_response)
         
+    # Append & Save Assistant Message to Firestore
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     try:
         asst_msg_data = {"role": "assistant", "content": full_response, "timestamp": firestore.SERVER_TIMESTAMP}
