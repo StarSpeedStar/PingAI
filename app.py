@@ -74,7 +74,7 @@ def format_latex_for_streamlit(text: str) -> str:
     Translates raw block/inline LaTeX formats, structural anomalies, 
     and blockquote markings into Streamlit-native math delimiters ($ and $$).
     """
-    if not text:
+    if not text or not isinstance(text, str):
         return ""
         
     # Clean up standard LLM formatting debris or blockquote characters
@@ -263,38 +263,55 @@ if user_input := st.chat_input("Type your message here..."):
                 internal_thought = f"Reflection skipped due to API error: {str(e)}"
     else:
         internal_thought = "Standard execution."
-
-    # Assistant Response Streaming with Exception Handling
+    # 4 spaces: Nested inside the "if user_input: " condition loop
     with st.chat_message("assistant"):
+        
+        # 8 spaces: Baseline inside the assistant message block
         response_placeholder = st.empty()
         full_response = ""
+        
         system_prompt = (
             "You are Ping, a warm, polite, extremely helpful, and friendly AI assistant. "
             "Keep your tone encouraging, clear, and direct. When providing mathematical "
             "formulas or physics calculations, always wrap block math in $$...$$ or single $...$ "
             "for inline text to ensure ideal readability."
         )
+        
         chat_messages = [{"role": "system", "content": system_prompt}]
+        
         # Load historical conversation elements up to the last turn context
-for m in st.session_state.messages[:-1]:
-    chat_messages.append({"role": m["role"], "content": m["content"]})
-    # Append latest user interaction turn with attached parsing context loaded
-chat_messages.append({"role": "user", "content": active_payload})
-try:
-    stream = client.chat.completions.create(
-        model=selected_model,
-        messages=chat_messages,
-        stream=True
-    )
-    for chunk in stream:
-        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-            token = chunk.choices[0].delta.content
-            full_response += token
-            sanitized_stream = format_latex_for_streamlit(full_response)
-            response_placeholder.markdown(sanitized_stream + " ▌")
+        for m in st.session_state.messages[:-1]:
+            # 12 spaces: Nested inside the history "for" loop
+            chat_messages.append({"role": m["role"], "content": m["content"]})
+            
+        # 8 spaces: Sibling to the history loop
+        chat_messages.append({"role": "user", "content": active_payload})
+        
+        try:
+            # 12 spaces: Nested inside the "try:" safety block
+            stream = client.chat.completions.create(
+                model=selected_model,
+                messages=chat_messages,
+                stream=True
+            )
+            
+            for chunk in stream:
+                # 16 spaces: Nested inside the token streaming "for" loop
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    # 20 spaces: Nested inside the structural "if" validation check
+                    token = chunk.choices[0].delta.content
+                    full_response += token
+                    sanitized_stream = format_latex_for_streamlit(full_response)
+                    response_placeholder.markdown(sanitized_stream + " ▌")
+                    
+            # 12 spaces: Back inside the "try:" block, executed after streaming wraps up
             response_placeholder.markdown(format_latex_for_streamlit(full_response))
-except Exception as e:
-    full_response = f"⚠️ Request couldn't be completed with model {selected_model_name}. Error details: {str(e)}"
-    response_placeholder.error(full_response)
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
-    st.rerun()
+            
+        except Exception as e:
+            # 12 spaces: Nested inside the "except:" error isolation fallback block
+            full_response = f"⚠️ Request couldn't be completed with model `{selected_model_name}`. Error details: {str(e)}"
+            response_placeholder.error(full_response)
+        
+        # 8 spaces: Back inside the assistant UI block to append logs and reload context
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        st.rerun()
