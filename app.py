@@ -1,6 +1,7 @@
 import streamlit as st
 from groq import Groq
 import os
+import re
 
 # Page configuration
 st.set_page_config(
@@ -43,12 +44,6 @@ st.markdown("""
         border-right: 1px solid #e2e8f0; 
     }
     /* Smooth scaling and layout alignment for the branding logo */
-    .sidebar-branding-box {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 5px 0px 20px 0px;
-    }
     .sidebar-branding-text {
         font-size: 1.35rem;
         font-weight: 700;
@@ -56,6 +51,19 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
+def format_latex_for_streamlit(text: str) -> str:
+    """
+    Translates raw block/inline LaTeX formats into Streamlit-native math delimiters ($ and $$).
+    """
+    # Replace display block brackets \[ ... \] or standard isolated [ ... ] math patterns with $$
+    text = re.sub(r'\\\[(.*?)\\\]', r'\n$$\1$$\n', text, flags=re.DOTALL)
+    # Replace standalone lines that open and close with raw mathematical brackets
+    text = re.sub(r'(?m)^\[\s*(.*?)\s*\]$', r'$$\1$$', text)
+    
+    # Replace common inline delimiters like \( ... \) with $
+    text = re.sub(r'\\\((.*?)\\\)', r'$\1$', text)
+    return text
 
 # Fetch API Key securely
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
@@ -79,7 +87,7 @@ with st.sidebar:
     # Universal App Branding Block
     logo_path = "assets/logo.png"
     if os.path.exists(logo_path):
-        col1, col2 = st.columns([1, 4])
+        col1, col2 = st.columns()
         with col1:
             st.image(logo_path, width=45)
         with col2:
@@ -125,10 +133,10 @@ with st.sidebar:
     st.caption(f"Active Model: {selected_model_name}")
     st.caption("Status: 🟢 Online & Optimized")
 
-# Display historical messages
+# Display historical messages (running them through our LaTeX sanitizer)
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        st.markdown(format_latex_for_streamlit(msg["content"]))
 
 # Chat Input & Processing Loop
 if user_input := st.chat_input("Type your message here..."):
@@ -203,12 +211,15 @@ if user_input := st.chat_input("Type your message here..."):
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                     token = chunk.choices[0].delta.content
                     full_response += token
-                    response_placeholder.markdown(full_response + " ▌")
+                    # Sanitize formatting actively during live-streaming text
+                    sanitized_stream = format_latex_for_streamlit(full_response)
+                    response_placeholder.markdown(sanitized_stream + " ▌")
                 
-            response_placeholder.markdown(full_response)
+            response_placeholder.markdown(format_latex_for_streamlit(full_response))
         except Exception as e:
             full_response = f"⚠️ Request couldn't be completed with model `{selected_model_name}`. Error details: {str(e)}"
             response_placeholder.error(full_response)
         
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     st.rerun()
+
