@@ -161,7 +161,7 @@ with st.sidebar:
     # Universal App Branding Block
     logo_path = "assets/logo.png"
     if os.path.exists(logo_path):
-        col1, col2 = st.columns()
+        col1, col2 = st.columns([1, 4])
         with col1:
             st.image(logo_path, width=45)
         with col2:
@@ -261,76 +261,58 @@ if user_input := st.chat_input("Type your message here..."):
 
     internal_thought = ""
     if "DEEP" in routing_decision:
-        # 8 spaces: Inside the deep routing evaluation block
         with st.spinner(f"✨ Ping is analyzing your request using {selected_model_name}..."):
             try:
-                # 16 spaces: Inside the reflection try container
                 reflection_res = client.chat.completions.create(
                     model=selected_model,
                     messages=[{"role": "system", "content": f"Formulate a brief strategy to answer: {user_input}"}]
                 )
                 if reflection_res.choices and reflection_res.choices[0].message.content:
-                    # 20 spaces: Inside the token match check
                     internal_thought = reflection_res.choices[0].message.content
                 else:
-                    # 20 spaces: Fallback conditional match
                     internal_thought = "Standard processing."
             except Exception as e:
-                # 16 spaces: Safety exception container
                 internal_thought = f"Reflection skipped due to API error: {str(e)}"
     else:
-        # 8 spaces: Parallel baseline check to deep routing logic
         internal_thought = "Standard execution."
-        
-    # 4 spaces: Assistant conversation container definition block
+
+    # Assistant Response Streaming with Exception Handling
     with st.chat_message("assistant"):
-        # 8 spaces: Baseline block inside assistant window layout context
         response_placeholder = st.empty()
         full_response = ""
-        
         system_prompt = (
             "You are Ping, a warm, polite, extremely helpful, and friendly AI assistant. "
             "Keep your tone encouraging, clear, and direct. When providing mathematical "
             "formulas or physics calculations, always wrap block math in $$...$$ or single $...$ "
             "for inline text to ensure ideal readability."
         )
-        
         chat_messages = [{"role": "system", "content": system_prompt}]
         
         # Load historical conversation elements up to the last turn context
         for m in st.session_state.messages[:-1]:
-            # 12 spaces: Nested inside historical tracker turn iteration loop
             chat_messages.append({"role": m["role"], "content": m["content"]})
             
-        # 8 spaces: Appending active interaction content payload
+        # Append latest user interaction turn with attached parsing context loaded
         chat_messages.append({"role": "user", "content": active_payload})
         
         try:
-            # 12 spaces: Inside streaming connection logic block
             stream = client.chat.completions.create(
                 model=selected_model,
                 messages=chat_messages,
                 stream=True
             )
-            
             for chunk in stream:
-                # 16 spaces: Nested inside live chunk update loop iteration
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    # 20 spaces: Inside string character evaluation logic
                     token = chunk.choices[0].delta.content
                     full_response += token
                     sanitized_stream = format_latex_for_streamlit(full_response)
                     response_placeholder.markdown(sanitized_stream + " ▌")
                     
-            # 12 spaces: Completed stream formatting terminal render call
             response_placeholder.markdown(format_latex_for_streamlit(full_response))
-            
         except Exception as e:
-            # 12 spaces: Network error parsing layer exception fallbacks
             full_response = f"⚠️ Request couldn't be completed with model {selected_model_name}. Error details: {str(e)}"
             response_placeholder.error(full_response)
             
-        # 8 spaces: Saving transaction states securely to browser runtime log lists
         st.session_state.messages.append({"role": "assistant", "content": full_response})
         st.rerun()
 
