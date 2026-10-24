@@ -91,51 +91,30 @@ def format_latex_for_streamlit(text: str) -> str:
 @st.cache_resource
 def get_firestore_client():
     """
-    Directly builds the service account credential map from flat root keys
-    and dynamically reconstructs line breaks for the private key payload.
+    Safely unpacks the raw stringified Firebase data chunk directly from 
+    the Streamlit cloud console dashboard, correcting line break formatting seamlessly.
     """
     try:
-        # Pull each key directly by its exact uppercase string identifier
-        f_type = st.secrets.get("FIREBASE_TYPE")
-        f_project_id = st.secrets.get("FIREBASE_PROJECT_ID")
-        f_private_key_id = st.secrets.get("FIREBASE_PRIVATE_KEY_ID")
-        f_private_key = st.secrets.get("FIREBASE_PRIVATE_KEY")
-        f_client_email = st.secrets.get("FIREBASE_CLIENT_EMAIL")
-        f_client_id = st.secrets.get("FIREBASE_CLIENT_ID")
-        f_auth_uri = st.secrets.get("FIREBASE_AUTH_URI")
-        f_token_uri = st.secrets.get("FIREBASE_TOKEN_URI")
-        f_auth_provider_url = st.secrets.get("FIREBASE_AUTH_PROVIDER_X509_CERT_URL")
-        f_client_url = st.secrets.get("FIREBASE_CLIENT_X509_CERT_URL")
-        f_universe_domain = st.secrets.get("FIREBASE_UNIVERSE_DOMAIN")
+        import json
 
-        # Failsafe protection layer: Stop execution early if any core parameters are missing
-        if not f_project_id or not f_private_key:
-            st.error("⚠️ Configuration Error: Firebase keys are missing from secrets.")
+        # Read the raw single line text parameter string block
+        raw_json_string = st.secrets.get("FIREBASE_JSON_DATA")
+        if not raw_json_string:
+            st.error("⚠️ Configuration Error: FIREBASE_JSON_DATA is missing from secrets.")
             return None
 
-        # Clean raw string backslashes by splitting explicit text sequences and joining with real line breaks
-        cleaned_key = "\n".join(f_private_key.split("\\n"))
+        # Parse string block directly into a Python dictionary mapping array
+        credentials_dict = json.loads(raw_json_string)
 
-        credentials_dict = {
-            "type": f_type,
-            "project_id": f_project_id,
-            "private_key_id": f_private_key_id,
-            "private_key": cleaned_key,
-            "client_email": f_client_email,
-            "client_id": f_client_id,
-            "auth_uri": f_auth_uri,
-            "token_uri": f_token_uri,
-            "auth_provider_x509_cert_url": f_auth_provider_url,
-            "client_x509_cert_url": f_client_url,
-            "universe_domain": f_universe_domain
-        }
-            
+        # Failsafe: Clean up double-escaped literal newlines for the authorization cryptography library
+        if "private_key" in credentials_dict:
+            credentials_dict["private_key"] = credentials_dict["private_key"].replace("\\n", "\n")
+
         creds = service_account.Credentials.from_service_account_info(credentials_dict)
-        return firestore.Client(credentials=creds, project=credentials_dict["project_id"])
+        return firestore.Client(credentials=creds, project=credentials_dict.get("project_id"))
     except Exception as e:
         st.error(f"Failed to connect to Firebase database cloud storage: {e}")
         return None
-
 
 
 def save_feedback_to_firebase(rating: int, comments: str):
