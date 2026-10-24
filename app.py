@@ -92,9 +92,12 @@ def format_latex_for_streamlit(text: str) -> str:
 def get_firestore_client():
     """
     Safely builds the service account credential map from secrets,
-    supporting both flat uppercase keys and nested table dictionaries.
+    supporting both flat uppercase keys and nested table dictionaries,
+    and cleanly decodes escaped text newlines into raw system bytes.
     """
     try:
+        import codecs
+
         # Failsafe helper function to check multiple secret naming conventions
         def fetch_secret(flat_key, nested_key):
             if flat_key in st.secrets:
@@ -104,7 +107,11 @@ def get_firestore_client():
             return None
 
         raw_private_key = fetch_secret("FIREBASE_PRIVATE_KEY", "private_key")
-        cleaned_private_key = raw_private_key.replace("\\n", "\n") if raw_private_key else None
+        
+        cleaned_private_key = None
+        if raw_private_key:
+            # Safely translates double-escaped literal '\n' sequences into true binary system newlines
+            cleaned_private_key = codecs.escape_decode(bytes(raw_private_key, "utf-8"))[0].decode("utf-8")
 
         credentials_dict = {
             "type": fetch_secret("FIREBASE_TYPE", "type"),
@@ -130,6 +137,7 @@ def get_firestore_client():
     except Exception as e:
         st.error(f"Failed to connect to Firebase database cloud storage: {e}")
         return None
+
 
 
 def save_feedback_to_firebase(rating: int, comments: str):
