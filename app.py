@@ -91,64 +91,26 @@ def format_latex_for_streamlit(text: str) -> str:
 @st.cache_resource
 def get_firestore_client():
     """
-    Directly pieces together your original Firebase security payload map using a localized
-    multi-line list representation to completely bypass dashboard backslash parsing bugs.
+    Temporary tool to help convert your raw downloaded JSON file into a single line string.
     """
-    try:
-        # Reconstruct the exact structural content of your original downloaded key file
-        private_key_lines = [
-            "-----BEGIN PRIVATE KEY-----",
-            "MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC9KcbFNNHRvudc",
-            "3Rt3bcFXV6Ry9bZe1ntSESZglVULmaGG8afrXX0wX+N2x4LkwTX5krrBlKAGRqtS",
-            "1+bjvvytE/60e2fbDyTvWVxlxH7btMVUJpaSiVQINqzrE4MrSEHNNcVWgyf5FniH",
-            "NUD0zbK/9W0TmY9OIhfR4swqRqsbeuI67QVR55ZOSxRZHPKRabD8t02OJnpZ1L",
-            "v1LfqtnSseYuPj43xwlLEVq0atuXskG/tDZ8Ug0JoHDsVVnHHEFlcSWjfCHwDTBG",
-            "IsQZQuTaPA4s8MzZ1AwYZGaX4svR26Yu3Y0jGZ48PVa9JRwvVjjrlDrNB1XlMebH",
-            "EsWpV24m5AgMBAAECggEAGXpV/lvF4uU+jkBtoaFTyCrSyHUV0iI7S+tpatrSMJT",
-            "Jr74+qrHV2b0givAGTj9DwNClfMtC3nWIP8k6nPQtXjZyOObiLxwUEnTLwB0+JON",
-            "tLI9h+myqt8x9b9AZ+6toyXXzlVpm+OKw6y0eCZrm93nb7ibhqVloMenFK/CGvVW",
-            "Nd39AA95/Y2z11TVNi9WN3MT4adDZAHGFXh2kkUOT1x1bArS5MYPmEDItQ/mKYPm",
-            "pTNrmEVn5cnsy2Jxb1GHPPhJKJX/GBfSHRaR3Od/d/kwHcOXIKg8Bl8sCvsUD0Ng",
-            "X4dOOl6DiKVcAhlZKZADis2pg2XSEgpEePU7vstG0TQKBgQDfr2NXhPafL7szx6x",
-            "wHwmIwGzyR0pPd9J250mh0Xs5M9+OjMeo6cqCJwBi1MVvLJbJNWSrYIc/1pxtRfD",
-            "nex0Kgy1FhF2EwIsFAt91mzeY1/MlD1gBK3IxEkv59MC3OZtK9taFxjp4bbrxZymI",
-            "L70y5vY7C2PgpGVUjHoKSC9YrkwKBgQDYfady88KOBMTqC/9ov0G+MfEN5+Zwgg4",
-            "uemeRckrGOalifKAqOQlfj/XQ+5aA6iSQ7AgcCZjM32EyihOD1rfkte5O9O2GHvA",
-            "6lK8r5kTliWGkYasLYuRziyKKCHnv3MIghQlCortzKCYzQ3mVmU5GIGvGa29eNIu",
-            "xlYfhbo09AwKBgQDAxAbaf22BlcLARs0l+rlermW1DRbPETXA3mUoHL0SeM+pq0z",
-            "NFl08eJvuj+pteoGfeHH+9rrXmv1HdkSz2AhlRZImF93be7gLK+iTFdHUqLpRyXS",
-            "LDzGaTwsdm41+GEJ41rQAhqVegrmyr6R7IIiAcQk8hXqnAHvMPhjL/4NcHQKBgQD",
-            "KOh5IGAHeLgBPbOOp0ja0VuyJA93TrPlYW0kRqYTFxClA8Y+fwWXLGawTCmDdjVq",
-            "Y8ZLlteVBQ00FK8vs9I8VGwlAQjT6ez4GSsuTI2eqTvmh1wYy/a7Pa+HYtPBKqpn",
-            "ATOWIlICroo6Ehnw1zV47zZ8/Wy5N/qGbQkYKw/01RwKBgQDGX9jVXV4ND6QtTQr",
-            "QiBfEJhH6AFEAPUazeI/W1GYznMM6Eg6+WECap3p9SQwnW08PxLtPvmi8fSa2lOo",
-            "QKpGKMCk+tbihrhMrQwSPZpyC0IcOn46kRu2rogxlv34KvEDYobzsOf6eX9Jatwx",
-            "OUcFR1FR3WXzPnaa4R8nMvmHq3Q==",
-            "-----END PRIVATE KEY-----"
-        ]
-        
-        # Connect the individual lines natively using clean carriage returns
-        assembled_key = "\n".join(private_key_lines)
-
-        credentials_dict = {
-            "type": "service_account",
-            "project_id": "pingai-1",
-            "private_key_id": "08e4f3d6d73e27a5d586b9d266a5821956312ef9",
-            "private_key": assembled_key,
-            "client_email": "firebase-adminsdk-fbsvc@://gserviceaccount.com",
-            "client_id": "112961164706876161402",
-            "auth_uri": "https://google.com",
-            "token_uri": "https://googleapis.com",
-            "auth_provider_x509_cert_url": "https://googleapis.com",
-            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40://gserviceaccount.com",
-            "universe_domain": "googleapis.com"
-        }
-
-        creds = service_account.Credentials.from_service_account_info(credentials_dict)
-        return firestore.Client(credentials=creds, project=credentials_dict["project_id"])
-    except Exception as e:
-        st.error(f"Failed to connect to Firebase database cloud storage: {e}")
-        return None
+    st.info("ℹ️ Diagnostic Mode: Use the 'Attach a file' tool in the sidebar to upload your raw downloaded Firebase service account .json file!")
+    
+    # Check if a file is uploaded in your sidebar
+    if 'uploaded_file' in globals() and uploaded_file is not None:
+        try:
+            # Read the unedited text exactly as it was downloaded from Google
+            uploaded_file.seek(0)
+            raw_bytes = uploaded_file.read()
+            raw_text = raw_bytes.decode("utf-8")
+            
+            # Clean up newlines inside the file payload natively
+            flattened_json = raw_text.replace("\n", "\\n").replace("\r", "")
+            
+            st.success("🎉 Success! Copy the exact line below and paste it into your Streamlit Cloud Secrets dashboard:")
+            st.code(f"FIREBASE_RAW_JSON = '{flattened_json}'")
+        except Exception as e:
+            st.error(f"Could not convert file: {e}")
+    return None
 
 
 def save_feedback_to_firebase(rating: int, comments: str):
