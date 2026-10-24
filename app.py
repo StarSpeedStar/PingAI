@@ -91,11 +91,30 @@ def format_latex_for_streamlit(text: str) -> str:
 @st.cache_resource
 def get_firestore_client():
     """
-    Safely authenticates with Firebase using Streamlit secrets 
-    and caches the connection resource globally.
+    Safely builds the service account credential map from flat root secrets 
+    and returns a valid Firebase Firestore connection instance.
     """
     try:
-        credentials_dict = dict(st.secrets["text_key"])
+        # Reconstruct the expected authentication payload map from flat secret variables
+        credentials_dict = {
+            "type": st.secrets.get("FIREBASE_TYPE"),
+            "project_id": st.secrets.get("FIREBASE_PROJECT_ID"),
+            "private_key_id": st.secrets.get("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": st.secrets.get("FIREBASE_PRIVATE_KEY"),
+            "client_email": st.secrets.get("FIREBASE_CLIENT_EMAIL"),
+            "client_id": st.secrets.get("FIREBASE_CLIENT_ID"),
+            "auth_uri": st.secrets.get("FIREBASE_AUTH_URI"),
+            "token_uri": st.secrets.get("FIREBASE_TOKEN_URI"),
+            "auth_provider_x509_cert_url": st.secrets.get("FIREBASE_AUTH_PROVIDER_X509_CERT_URL"),
+            "client_x509_cert_url": st.secrets.get("FIREBASE_CLIENT_X509_CERT_URL"),
+            "universe_domain": st.secrets.get("FIREBASE_UNIVERSE_DOMAIN")
+        }
+        
+        # Verify that critical values were successfully parsed from secrets
+        if not credentials_dict["project_id"] or not credentials_dict["private_key"]:
+            st.error("⚠️ Configuration Error: Firebase keys are missing from secrets.")
+            return None
+            
         creds = service_account.Credentials.from_service_account_info(credentials_dict)
         return firestore.Client(credentials=creds, project=credentials_dict["project_id"])
     except Exception as e:
@@ -142,7 +161,7 @@ with st.sidebar:
     # Universal App Branding Block
     logo_path = "assets/logo.png"
     if os.path.exists(logo_path):
-        col1, col2 = st.columns([1, 4])
+        col1, col2 = st.columns()
         with col1:
             st.image(logo_path, width=45)
         with col2:
@@ -242,23 +261,30 @@ if user_input := st.chat_input("Type your message here..."):
 
     internal_thought = ""
     if "DEEP" in routing_decision:
+        # 8 spaces: Inside the deep routing evaluation block
         with st.spinner(f"✨ Ping is analyzing your request using {selected_model_name}..."):
             try:
+                # 16 spaces: Inside the reflection try container
                 reflection_res = client.chat.completions.create(
                     model=selected_model,
                     messages=[{"role": "system", "content": f"Formulate a brief strategy to answer: {user_input}"}]
                 )
                 if reflection_res.choices and reflection_res.choices[0].message.content:
+                    # 20 spaces: Inside the token match check
                     internal_thought = reflection_res.choices[0].message.content
                 else:
+                    # 20 spaces: Fallback conditional match
                     internal_thought = "Standard processing."
             except Exception as e:
+                # 16 spaces: Safety exception container
                 internal_thought = f"Reflection skipped due to API error: {str(e)}"
     else:
+        # 8 spaces: Parallel baseline check to deep routing logic
         internal_thought = "Standard execution."
-
-    # Assistant Response Streaming with Exception Handling
+        
+    # 4 spaces: Assistant conversation container definition block
     with st.chat_message("assistant"):
+        # 8 spaces: Baseline block inside assistant window layout context
         response_placeholder = st.empty()
         full_response = ""
         
@@ -273,12 +299,14 @@ if user_input := st.chat_input("Type your message here..."):
         
         # Load historical conversation elements up to the last turn context
         for m in st.session_state.messages[:-1]:
+            # 12 spaces: Nested inside historical tracker turn iteration loop
             chat_messages.append({"role": m["role"], "content": m["content"]})
             
-        # Append latest user interaction turn with attached parsing context loaded
+        # 8 spaces: Appending active interaction content payload
         chat_messages.append({"role": "user", "content": active_payload})
         
         try:
+            # 12 spaces: Inside streaming connection logic block
             stream = client.chat.completions.create(
                 model=selected_model,
                 messages=chat_messages,
@@ -286,17 +314,23 @@ if user_input := st.chat_input("Type your message here..."):
             )
             
             for chunk in stream:
+                # 16 spaces: Nested inside live chunk update loop iteration
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    # 20 spaces: Inside string character evaluation logic
                     token = chunk.choices[0].delta.content
                     full_response += token
                     sanitized_stream = format_latex_for_streamlit(full_response)
                     response_placeholder.markdown(sanitized_stream + " ▌")
                     
+            # 12 spaces: Completed stream formatting terminal render call
             response_placeholder.markdown(format_latex_for_streamlit(full_response))
             
         except Exception as e:
+            # 12 spaces: Network error parsing layer exception fallbacks
             full_response = f"⚠️ Request couldn't be completed with model {selected_model_name}. Error details: {str(e)}"
             response_placeholder.error(full_response)
             
+        # 8 spaces: Saving transaction states securely to browser runtime log lists
         st.session_state.messages.append({"role": "assistant", "content": full_response})
         st.rerun()
+
