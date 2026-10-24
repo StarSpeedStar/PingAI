@@ -100,7 +100,7 @@ def get_firestore_client():
             "type": st.secrets.get("FIREBASE_TYPE"),
             "project_id": st.secrets.get("FIREBASE_PROJECT_ID"),
             "private_key_id": st.secrets.get("FIREBASE_PRIVATE_KEY_ID"),
-            "private_key": st.secrets.get("FIREBASE_PRIVATE_KEY"),
+            "private_key": st.secrets.get("FIREBASE_PRIVATE_KEY").replace("\\n", "\n") if st.secrets.get("FIREBASE_PRIVATE_KEY") else None,
             "client_email": st.secrets.get("FIREBASE_CLIENT_EMAIL"),
             "client_id": st.secrets.get("FIREBASE_CLIENT_ID"),
             "auth_uri": st.secrets.get("FIREBASE_AUTH_URI"),
@@ -109,6 +109,7 @@ def get_firestore_client():
             "client_x509_cert_url": st.secrets.get("FIREBASE_CLIENT_X509_CERT_URL"),
             "universe_domain": st.secrets.get("FIREBASE_UNIVERSE_DOMAIN")
         }
+
         
         # Verify that critical values were successfully parsed from secrets
         if not credentials_dict["project_id"] or not credentials_dict["private_key"]:
