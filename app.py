@@ -2,10 +2,12 @@ import streamlit as st
 from groq import Groq
 import os
 import re
+import json
+from datetime import datetime
 
-# Page configuration - Must be the very first Streamlit command
+# Page configuration - Must be the very first Streamlit command executed
 st.set_page_config(
-    page_title="Ping AI Companion", 
+    page_title="Ping AI Companion (Beta)", 
     page_icon="assets/logo.png", 
     layout="centered"
 )
@@ -54,6 +56,16 @@ st.markdown("""
         font-weight: 700;
         color: #1a202c;
     }
+    /* Style tweak to make the beta badge pop */
+    .beta-badge {
+        background-color: #e2e8f0;
+        color: #4a5568;
+        font-size: 0.75rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -81,6 +93,37 @@ def format_latex_for_streamlit(text: str) -> str:
     text = re.sub(r'\\\((.*?)\\\)', r'$\1$', text)
     return text
 
+def save_feedback_to_json(rating: int, comments: str):
+    """
+    Appends the submitted user feedback entry cleanly into a persistent local JSON file.
+    """
+    feedback_file = "beta_feedback.json"
+    new_entry = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "rating": rating,
+        "comments": comments
+    }
+    
+    # Load existing logs if the file exists
+    if os.path.exists(feedback_file):
+        try:
+            with open(feedback_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if not isinstance(data, list):
+                    data = []
+        except Exception:
+            data = []
+    else:
+        data = []
+        
+    # Append fresh submission and write securely back to file system
+    data.append(new_entry)
+    try:
+        with open(feedback_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        st.sidebar.error(f"Could not write feedback to disk: {e}")
+
 # Fetch API Key securely from secrets configuration
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 
@@ -95,7 +138,7 @@ client = Groq(api_key=GROQ_API_KEY)
 st.title("💬 Ping AI Assistant")
 st.caption("Your friendly, fast, and intelligent daily companion.")
 
-# Initialize session state for messages
+# Initialize session state variables
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -108,9 +151,9 @@ with st.sidebar:
         with col1:
             st.image(logo_path, width=45)
         with col2:
-            st.markdown('<div class="sidebar-branding-text" style="line-height: 45px;">Ping AI</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sidebar-branding-text" style="line-height: 45px;">Ping AI <span class="beta-badge">BETA</span></div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="sidebar-branding-text">💬 Ping AI</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-branding-text">💬 Ping AI <span class="beta-badge">BETA</span></div>', unsafe_allow_html=True)
         st.caption("💡 Tip: Add `assets/logo.png` to display your custom brand image here.")
         
     st.markdown("---")
@@ -146,6 +189,22 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
+    # --- BETA USER FEEDBACK ENGINE (Saves securely to local JSON file) ---
+    st.markdown("---")
+    st.header("📣 Beta Feedback")
+    with st.form("feedback_form", clear_on_submit=True):
+        rating = st.slider("Rate your experience:", 1, 5, 5, help="1 = Poor, 5 = Excellent")
+        comments = st.text_area("Help us improve Ping AI:", placeholder="What features should we add? Did you hit any bugs?", max_chars=500)
+        submitted = st.form_submit_button("Submit Beta Feedback")
+        
+        if submitted:
+            if comments.strip():
+                # Process saving mechanics directly to the persistent disk storage file
+                save_feedback_to_json(rating, comments.strip())
+                st.success("🎉 Thank you! Your feedback has been logged securely.")
+            else:
+                st.warning("Please add a short comment before submitting.")
+
     st.markdown("---")
     st.caption(f"Active Model: {selected_model_name}")
     st.caption("Status: 🟢 Online & Optimized")
@@ -153,7 +212,6 @@ with st.sidebar:
 # Display historical messages in viewport chronological sequence
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        # Always output context safely cleaned by the formatting adapter
         st.markdown(format_latex_for_streamlit(msg["content"]))
 
 # Chat Input & Processing Loop
@@ -184,7 +242,6 @@ if user_input := st.chat_input("Type your message here..."):
             model=selected_model,
             messages=[{"role": "system", "content": gatekeeper_prompt}]
         )
-        # PRODUCTION FIXED: Access properties via explicit choice mapping index array 0
         if gatekeeper_res.choices and gatekeeper_res.choices[0].message.content:
             routing_decision = gatekeeper_res.choices[0].message.content.strip().upper()
     except Exception as e:
@@ -198,7 +255,6 @@ if user_input := st.chat_input("Type your message here..."):
                     model=selected_model,
                     messages=[{"role": "system", "content": f"Formulate a brief strategy to answer: {user_input}"}]
                 )
-                # PRODUCTION FIXED: Added zero-index selection to prevent API runtime property drops
                 if reflection_res.choices and reflection_res.choices[0].message.content:
                     internal_thought = reflection_res.choices[0].message.content
                 else:
@@ -212,41 +268,33 @@ if user_input := st.chat_input("Type your message here..."):
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
         full_response = ""
-        
         system_prompt = (
             "You are Ping, a warm, polite, extremely helpful, and friendly AI assistant. "
             "Keep your tone encouraging, clear, and direct. When providing mathematical "
             "formulas or physics calculations, always wrap block math in $$...$$ or single $...$ "
             "for inline text to ensure ideal readability."
         )
-
         chat_messages = [{"role": "system", "content": system_prompt}]
-        
         # Load historical conversation elements up to the last turn context
-        for m in st.session_state.messages[:-1]:
-            chat_messages.append({"role": m["role"], "content": m["content"]})
-            
-        # Append latest user interaction turn with attached parsing context loaded
-        chat_messages.append({"role": "user", "content": active_payload})
-
-        try:
-            stream = client.chat.completions.create(
-                model=selected_model,
-                messages=chat_messages,
-                stream=True
-            )
-            
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    token = chunk.choices[0].delta.content
-                    full_response += token
-                    sanitized_stream = format_latex_for_streamlit(full_response)
-                    response_placeholder.markdown(sanitized_stream + " ▌")
-                
+for m in st.session_state.messages[:-1]:
+    chat_messages.append({"role": m["role"], "content": m["content"]})
+    # Append latest user interaction turn with attached parsing context loaded
+chat_messages.append({"role": "user", "content": active_payload})
+try:
+    stream = client.chat.completions.create(
+        model=selected_model,
+        messages=chat_messages,
+        stream=True
+    )
+    for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+            token = chunk.choices[0].delta.content
+            full_response += token
+            sanitized_stream = format_latex_for_streamlit(full_response)
+            response_placeholder.markdown(sanitized_stream + " ▌")
             response_placeholder.markdown(format_latex_for_streamlit(full_response))
-        except Exception as e:
-            full_response = f"⚠️ Request couldn't be completed with model `{selected_model_name}`. Error details: {str(e)}"
-            response_placeholder.error(full_response)
-        
+except Exception as e:
+    full_response = f"⚠️ Request couldn't be completed with model {selected_model_name}. Error details: {str(e)}"
+    response_placeholder.error(full_response)
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     st.rerun()
