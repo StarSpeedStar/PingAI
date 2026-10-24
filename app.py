@@ -2,8 +2,9 @@ import streamlit as st
 from groq import Groq
 import os
 import re
-import json
 from datetime import datetime
+from google.cloud import firestore
+from google.oauth2 import service_account
 
 # Page configuration - Must be the very first Streamlit command executed
 st.set_page_config(
@@ -77,52 +78,46 @@ def format_latex_for_streamlit(text: str) -> str:
     if not text or not isinstance(text, str):
         return ""
         
-    # Clean up standard LLM formatting debris or blockquote characters
     text = text.replace("> ", "").replace(" >", "")
     
-    # Balance unclosed ending block tokens ($$) that lack a clear starter layout
     if "$$" in text and text.count("$$") % 2 != 0:
         text = "$$\n" + text
 
-    # Replace display block brackets \[ ... \] or standard isolated [ ... ] math patterns with $$
     text = re.sub(r'\\\[(.*?)\\\]', r'\n$$\1$$\n', text, flags=re.DOTALL)
-    # Replace standalone lines that open and close with raw mathematical brackets
     text = re.sub(r'(?m)^\[\s*(.*?)\s*\]$', r'$$\1$$', text)
-    
-    # Replace common inline delimiters like \( ... \) with $
     text = re.sub(r'\\\((.*?)\\\)', r'$\1$', text)
     return text
 
-def save_feedback_to_json(rating: int, comments: str):
+@st.cache_resource
+def get_firestore_client():
     """
-    Appends the submitted user feedback entry cleanly into a persistent local JSON file.
+    Safely authenticates with Firebase using Streamlit secrets 
+    and caches the connection resource globally.
     """
-    feedback_file = "beta_feedback.json"
-    new_entry = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "rating": rating,
-        "comments": comments
-    }
-    
-    # Load existing logs if the file exists
-    if os.path.exists(feedback_file):
-        try:
-            with open(feedback_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if not isinstance(data, list):
-                    data = []
-        except Exception:
-            data = []
-    else:
-        data = []
-        
-    # Append fresh submission and write securely back to file system
-    data.append(new_entry)
     try:
-        with open(feedback_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        credentials_dict = dict(st.secrets["text_key"])
+        creds = service_account.Credentials.from_service_account_info(credentials_dict)
+        return firestore.Client(credentials=creds, project=credentials_dict["project_id"])
     except Exception as e:
-        st.sidebar.error(f"Could not write feedback to disk: {e}")
+        st.error(f"Failed to connect to Firebase database cloud storage: {e}")
+        return None
+
+def save_feedback_to_firebase(rating: int, comments: str):
+    """
+    Streams the submitted user feedback entry live into a Firestore collection named 'beta_feedback'.
+    """
+    db = get_firestore_client()
+    if db is not None:
+        try:
+            doc_ref = db.collection("beta_feedback").document()
+            doc_ref.set({
+                "timestamp": datetime.utcnow(),
+                "rating": rating,
+                "comments": comments
+            })
+            st.sidebar.success("🎉 Thank you! Your feedback has been securely logged to Firebase.")
+        except Exception as e:
+            st.sidebar.error(f"Could not push feedback payload to Firestore server: {e}")
 
 # Fetch API Key securely from secrets configuration
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
@@ -189,7 +184,7 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-    # --- BETA USER FEEDBACK ENGINE (Saves securely to local JSON file) ---
+    # --- BETA USER FEEDBACK ENGINE (Saves securely to Firebase Cloud Firestore) ---
     st.markdown("---")
     st.header("📣 Beta Feedback")
     with st.form("feedback_form", clear_on_submit=True):
@@ -199,9 +194,7 @@ with st.sidebar:
         
         if submitted:
             if comments.strip():
-                # Process saving mechanics directly to the persistent disk storage file
-                save_feedback_to_json(rating, comments.strip())
-                st.success("🎉 Thank you! Your feedback has been logged securely.")
+                save_feedback_to_firebase(rating, comments.strip())
             else:
                 st.warning("Please add a short comment before submitting.")
 
@@ -263,10 +256,9 @@ if user_input := st.chat_input("Type your message here..."):
                 internal_thought = f"Reflection skipped due to API error: {str(e)}"
     else:
         internal_thought = "Standard execution."
-    # 4 spaces: Nested inside the "if user_input: " condition loop
+
+    # Assistant Response Streaming with Exception Handling
     with st.chat_message("assistant"):
-        
-        # 8 spaces: Baseline inside the assistant message block
         response_placeholder = st.empty()
         full_response = ""
         
@@ -281,14 +273,12 @@ if user_input := st.chat_input("Type your message here..."):
         
         # Load historical conversation elements up to the last turn context
         for m in st.session_state.messages[:-1]:
-            # 12 spaces: Nested inside the history "for" loop
             chat_messages.append({"role": m["role"], "content": m["content"]})
             
-        # 8 spaces: Sibling to the history loop
+        # Append latest user interaction turn with attached parsing context loaded
         chat_messages.append({"role": "user", "content": active_payload})
         
         try:
-            # 12 spaces: Nested inside the "try:" safety block
             stream = client.chat.completions.create(
                 model=selected_model,
                 messages=chat_messages,
@@ -296,22 +286,17 @@ if user_input := st.chat_input("Type your message here..."):
             )
             
             for chunk in stream:
-                # 16 spaces: Nested inside the token streaming "for" loop
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    # 20 spaces: Nested inside the structural "if" validation check
                     token = chunk.choices[0].delta.content
                     full_response += token
                     sanitized_stream = format_latex_for_streamlit(full_response)
                     response_placeholder.markdown(sanitized_stream + " ▌")
                     
-            # 12 spaces: Back inside the "try:" block, executed after streaming wraps up
             response_placeholder.markdown(format_latex_for_streamlit(full_response))
             
         except Exception as e:
-            # 12 spaces: Nested inside the "except:" error isolation fallback block
-            full_response = f"⚠️ Request couldn't be completed with model `{selected_model_name}`. Error details: {str(e)}"
+            full_response = f"⚠️ Request couldn't be completed with model {selected_model_name}. Error details: {str(e)}"
             response_placeholder.error(full_response)
-        
-        # 8 spaces: Back inside the assistant UI block to append logs and reload context
+            
         st.session_state.messages.append({"role": "assistant", "content": full_response})
         st.rerun()
