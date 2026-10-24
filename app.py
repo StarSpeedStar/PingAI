@@ -84,10 +84,10 @@ if "messages" not in st.session_state:
 
 # Sidebar Controls & Model Selector
 with st.sidebar:
-    # Universal App Branding Block
+    # Universal App Branding Block (FIXED: st.columns now explicitly defines column sizes)
     logo_path = "assets/logo.png"
     if os.path.exists(logo_path):
-        col1, col2 = st.columns()
+        col1, col2 = st.columns([1, 4])
         with col1:
             st.image(logo_path, width=45)
         with col2:
@@ -133,7 +133,7 @@ with st.sidebar:
     st.caption(f"Active Model: {selected_model_name}")
     st.caption("Status: 🟢 Online & Optimized")
 
-# Display historical messages (running them through our LaTeX sanitizer)
+# Display historical messages
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(format_latex_for_streamlit(msg["content"]))
@@ -163,10 +163,9 @@ if user_input := st.chat_input("Type your message here..."):
             model=selected_model,
             messages=[{"role": "system", "content": gatekeeper_prompt}]
         )
-        if gatekeeper_res.choices and gatekeeper_res.choices[0].message.content:
-            routing_decision = gatekeeper_res.choices[0].message.content.strip().upper()
+        if gatekeeper_res.choices and gatekeeper_res.choices.message.content:
+            routing_decision = gatekeeper_res.choices.message.content.strip().upper()
     except Exception as e:
-        # Fallback gracefully if gatekeeper fails
         routing_decision = "FAST"
 
     internal_thought = ""
@@ -177,8 +176,8 @@ if user_input := st.chat_input("Type your message here..."):
                     model=selected_model,
                     messages=[{"role": "system", "content": f"Formulate a brief strategy to answer: {user_input}"}]
                 )
-                if reflection_res.choices and reflection_res.choices[0].message.content:
-                    internal_thought = reflection_res.choices[0].message.content
+                if reflection_res.choices and reflection_res.choices.message.content:
+                    internal_thought = reflection_res.choices.message.content
                 else:
                     internal_thought = "Standard processing."
             except Exception as e:
@@ -211,7 +210,6 @@ if user_input := st.chat_input("Type your message here..."):
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                     token = chunk.choices[0].delta.content
                     full_response += token
-                    # Sanitize formatting actively during live-streaming text
                     sanitized_stream = format_latex_for_streamlit(full_response)
                     response_placeholder.markdown(sanitized_stream + " ▌")
                 
@@ -222,4 +220,3 @@ if user_input := st.chat_input("Type your message here..."):
         
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     st.rerun()
-
