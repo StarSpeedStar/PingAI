@@ -1,12 +1,11 @@
 import streamlit as st
 from groq import Groq
-import firebase_admin
-from firebase_admin import credentials, firestore
+import os
 
 # Page configuration
 st.set_page_config(
     page_title="Ping AI Companion", 
-    page_icon="💬", 
+    page_icon="assets/logo.png", 
     layout="centered"
 )
 
@@ -43,6 +42,18 @@ st.markdown("""
         background-color: #f4f6f8; 
         border-right: 1px solid #e2e8f0; 
     }
+    /* Smooth scaling and layout alignment for the branding logo */
+    .sidebar-branding-box {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 5px 0px 20px 0px;
+    }
+    .sidebar-branding-text {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: #1a202c;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -55,50 +66,35 @@ if not GROQ_API_KEY:
 
 client = Groq(api_key=GROQ_API_KEY)
 
-# Initialize Firebase Firestore Securely
-if not firebase_admin._apps:
-    try:
-        firebase_creds = dict(st.secrets["firebase"])
-        if "\\n" in firebase_creds["private_key"]:
-            firebase_creds["private_key"] = firebase_creds["private_key"].replace("\\n", "\n")
-        cred = credentials.Certificate(firebase_creds)
-        firebase_admin.initialize_app(cred)
-    except Exception as e:
-        st.error(f"⚠️ Firebase Initialization Error: {e}")
-        st.stop()
-
-db = firestore.client()
-CHAT_ROOM_ID = "default_user_session"
-
 # Header Section
 st.title("💬 Ping AI Assistant")
-st.caption("Your friendly, fast, and intelligent daily companion (Cloud-Synced).")
+st.caption("Your friendly, fast, and intelligent daily companion.")
 
-# Initialize session state and safely load from Firestore
+# Initialize session state for messages
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    try:
-        docs = db.collection("chats").document(CHAT_ROOM_ID).collection("messages").stream()
-        fetched_msgs = []
-        for doc in docs:
-            data = doc.to_dict()
-            fetched_msgs.append(data)
-        
-        # Sort chronologically in Python to avoid database index errors
-        fetched_msgs.sort(key=lambda x: x.get("timestamp", 0) if x.get("timestamp") else 0)
-        
-        for data in fetched_msgs:
-            st.session_state.messages.append({"role": data["role"], "content": data["content"]})
-    except Exception as e:
-        # Fallback silently if collection is empty or unreachable
-        pass
 
 # Sidebar Controls & Model Selector
 with st.sidebar:
+    # Universal App Branding Block
+    logo_path = "assets/logo.png"
+    if os.path.exists(logo_path):
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            st.image(logo_path, width=45)
+        with col2:
+            st.markdown('<div class="sidebar-branding-text" style="line-height: 45px;">Ping AI</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="sidebar-branding-text">💬 Ping AI</div>', unsafe_allow_html=True)
+        st.caption("💡 Tip: Add `assets/logo.png` to display your custom brand image here.")
+        
+    st.markdown("---")
+    
     st.header("🧠 Model Selector")
     model_options = {
         "GPT-OSS 20B": "openai/gpt-oss-20b",
         "Qwen3.8-27b": "qwen/qwen3.8-27b",
+        "Llama 3.1 8B": "meta-llama/Llama-3.1-8B-Instruct:novita",
         "GPT-OSS 120B": "openai/gpt-oss-120b"
     }
     selected_model_name = st.selectbox("Choose AI Model:", list(model_options.keys()))
@@ -123,19 +119,11 @@ with st.sidebar:
     st.header("⚙️ Controls")
     if st.button("🧹 Clear Chat History", type="secondary"):
         st.session_state.messages = []
-        try:
-            batch = db.batch()
-            docs = db.collection("chats").document(CHAT_ROOM_ID).collection("messages").stream()
-            for doc in docs:
-                batch.delete(doc.reference)
-            batch.commit()
-        except Exception as e:
-            st.error(f"Error clearing cloud history: {e}")
         st.rerun()
 
     st.markdown("---")
     st.caption(f"Active Model: {selected_model_name}")
-    st.caption("Status: 🟢 Online & Cloud-Synced")
+    st.caption("Status: 🟢 Online & Optimized")
 
 # Display historical messages
 for msg in st.session_state.messages:
@@ -152,14 +140,7 @@ if user_input := st.chat_input("Type your message here..."):
     # Render user message
     with st.chat_message("user"):
         st.markdown(user_input)
-    
-    # Append & Save User Message to Firestore
-    user_msg_data = {"role": "user", "content": active_payload, "timestamp": firestore.SERVER_TIMESTAMP}
     st.session_state.messages.append({"role": "user", "content": active_payload})
-    try:
-        db.collection("chats").document(CHAT_ROOM_ID).collection("messages").add(user_msg_data)
-    except Exception as e:
-        st.warning(f"Could not save message to cloud: {e}")
 
     # Fast intent classification (Gatekeeper) with robust error handling
     gatekeeper_prompt = (
@@ -177,6 +158,7 @@ if user_input := st.chat_input("Type your message here..."):
         if gatekeeper_res.choices and gatekeeper_res.choices[0].message.content:
             routing_decision = gatekeeper_res.choices[0].message.content.strip().upper()
     except Exception as e:
+        # Fallback gracefully if gatekeeper fails
         routing_decision = "FAST"
 
     internal_thought = ""
@@ -228,12 +210,5 @@ if user_input := st.chat_input("Type your message here..."):
             full_response = f"⚠️ Request couldn't be completed with model `{selected_model_name}`. Error details: {str(e)}"
             response_placeholder.error(full_response)
         
-    # Append & Save Assistant Message to Firestore
     st.session_state.messages.append({"role": "assistant", "content": full_response})
-    try:
-        asst_msg_data = {"role": "assistant", "content": full_response, "timestamp": firestore.SERVER_TIMESTAMP}
-        db.collection("chats").document(CHAT_ROOM_ID).collection("messages").add(asst_msg_data)
-    except Exception as e:
-        st.warning(f"Could not save response to cloud: {e}")
-
     st.rerun()
