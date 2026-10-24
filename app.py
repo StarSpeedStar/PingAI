@@ -54,8 +54,16 @@ st.markdown("""
 
 def format_latex_for_streamlit(text: str) -> str:
     """
-    Translates raw block/inline LaTeX formats into Streamlit-native math delimiters ($ and $$).
+    Translates raw block/inline LaTeX formats, structural anomalies, 
+    and blockquote markings into Streamlit-native math delimiters ($ and $$).
     """
+    # Clean up standard LLM formatting debris or blockquote characters
+    text = text.replace("> ", "").replace(" >", "")
+    
+    # Balance unclosed ending block tokens ($$) that lack a clear starter layout
+    if "$$" in text and text.count("$$") % 2 != 0:
+        text = "$$\n" + text
+
     # Replace display block brackets \[ ... \] or standard isolated [ ... ] math patterns with $$
     text = re.sub(r'\\\[(.*?)\\\]', r'\n$$\1$$\n', text, flags=re.DOTALL)
     # Replace standalone lines that open and close with raw mathematical brackets
@@ -84,7 +92,7 @@ if "messages" not in st.session_state:
 
 # Sidebar Controls & Model Selector
 with st.sidebar:
-    # Universal App Branding Block (FIXED: st.columns now explicitly defines column sizes)
+    # Universal App Branding Block (FIXED: Explicit grid layout array prevents mixin crash)
     logo_path = "assets/logo.png"
     if os.path.exists(logo_path):
         col1, col2 = st.columns([1, 4])
@@ -163,8 +171,8 @@ if user_input := st.chat_input("Type your message here..."):
             model=selected_model,
             messages=[{"role": "system", "content": gatekeeper_prompt}]
         )
-        if gatekeeper_res.choices and gatekeeper_res.choices.message.content:
-            routing_decision = gatekeeper_res.choices.message.content.strip().upper()
+        if gatekeeper_res.choices and gatekeeper_res.choices[0].message.content:
+            routing_decision = gatekeeper_res.choices[0].message.content.strip().upper()
     except Exception as e:
         routing_decision = "FAST"
 
@@ -176,8 +184,8 @@ if user_input := st.chat_input("Type your message here..."):
                     model=selected_model,
                     messages=[{"role": "system", "content": f"Formulate a brief strategy to answer: {user_input}"}]
                 )
-                if reflection_res.choices and reflection_res.choices.message.content:
-                    internal_thought = reflection_res.choices.message.content
+                if reflection_res.choices and reflection_res.choices[0].message.content:
+                    internal_thought = reflection_res.choices[0].message.content
                 else:
                     internal_thought = "Standard processing."
             except Exception as e:
@@ -192,7 +200,9 @@ if user_input := st.chat_input("Type your message here..."):
         
         system_prompt = (
             "You are Ping, a warm, polite, extremely helpful, and friendly AI assistant. "
-            "Keep your tone encouraging, clear, and direct."
+            "Keep your tone encouraging, clear, and direct. When providing mathematical "
+            "formulas or physics calculations, always wrap block math in $$...$$ or single $...$ "
+            "for inline text to ensure ideal readability."
         )
 
         chat_messages = [{"role": "system", "content": system_prompt}]
