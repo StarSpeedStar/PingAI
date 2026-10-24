@@ -91,25 +91,34 @@ def format_latex_for_streamlit(text: str) -> str:
 @st.cache_resource
 def get_firestore_client():
     """
-    Safely builds the service account credential map from flat root secrets 
-    and returns a valid Firebase Firestore connection instance.
+    Safely builds the service account credential map from secrets,
+    supporting both flat uppercase keys and nested table dictionaries.
     """
     try:
-        # Reconstruct the expected authentication payload map from flat secret variables
-        credentials_dict = {
-            "type": st.secrets.get("FIREBASE_TYPE"),
-            "project_id": st.secrets.get("FIREBASE_PROJECT_ID"),
-            "private_key_id": st.secrets.get("FIREBASE_PRIVATE_KEY_ID"),
-            "private_key": st.secrets.get("FIREBASE_PRIVATE_KEY").replace("\\n", "\n") if st.secrets.get("FIREBASE_PRIVATE_KEY") else None,
-            "client_email": st.secrets.get("FIREBASE_CLIENT_EMAIL"),
-            "client_id": st.secrets.get("FIREBASE_CLIENT_ID"),
-            "auth_uri": st.secrets.get("FIREBASE_AUTH_URI"),
-            "token_uri": st.secrets.get("FIREBASE_TOKEN_URI"),
-            "auth_provider_x509_cert_url": st.secrets.get("FIREBASE_AUTH_PROVIDER_X509_CERT_URL"),
-            "client_x509_cert_url": st.secrets.get("FIREBASE_CLIENT_X509_CERT_URL"),
-            "universe_domain": st.secrets.get("FIREBASE_UNIVERSE_DOMAIN")
-        }
+        # Failsafe helper function to check multiple secret naming conventions
+        def fetch_secret(flat_key, nested_key):
+            if flat_key in st.secrets:
+                return st.secrets[flat_key]
+            if "text_key" in st.secrets and nested_key in st.secrets["text_key"]:
+                return st.secrets["text_key"][nested_key]
+            return None
 
+        raw_private_key = fetch_secret("FIREBASE_PRIVATE_KEY", "private_key")
+        cleaned_private_key = raw_private_key.replace("\\n", "\n") if raw_private_key else None
+
+        credentials_dict = {
+            "type": fetch_secret("FIREBASE_TYPE", "type"),
+            "project_id": fetch_secret("FIREBASE_PROJECT_ID", "project_id"),
+            "private_key_id": fetch_secret("FIREBASE_PRIVATE_KEY_ID", "private_key_id"),
+            "private_key": cleaned_private_key,
+            "client_email": fetch_secret("FIREBASE_CLIENT_EMAIL", "client_email"),
+            "client_id": fetch_secret("FIREBASE_CLIENT_ID", "client_id"),
+            "auth_uri": fetch_secret("FIREBASE_AUTH_URI", "auth_uri"),
+            "token_uri": fetch_secret("FIREBASE_TOKEN_URI", "token_uri"),
+            "auth_provider_x509_cert_url": fetch_secret("FIREBASE_AUTH_PROVIDER_X509_CERT_URL", "auth_provider_x509_cert_url"),
+            "client_x509_cert_url": fetch_secret("FIREBASE_CLIENT_X509_CERT_URL", "client_x509_cert_url"),
+            "universe_domain": fetch_secret("FIREBASE_UNIVERSE_DOMAIN", "universe_domain")
+        }
         
         # Verify that critical values were successfully parsed from secrets
         if not credentials_dict["project_id"] or not credentials_dict["private_key"]:
@@ -121,6 +130,7 @@ def get_firestore_client():
     except Exception as e:
         st.error(f"Failed to connect to Firebase database cloud storage: {e}")
         return None
+
 
 def save_feedback_to_firebase(rating: int, comments: str):
     """
