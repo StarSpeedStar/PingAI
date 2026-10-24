@@ -3,14 +3,14 @@ from groq import Groq
 import os
 import re
 
-# Page configuration
+# Page configuration - Must be the very first Streamlit command
 st.set_page_config(
     page_title="Ping AI Companion", 
     page_icon="assets/logo.png", 
     layout="centered"
 )
 
-# Custom clean styling ensuring full visibility for inputs and responses
+# Custom clean styling ensuring full visibility for inputs, text, and code blocks
 st.markdown("""
     <style>
     .stApp { 
@@ -26,6 +26,11 @@ st.markdown("""
     /* Fix to guarantee assistant response text is clearly visible */
     .stChatMessage p, .stChatMessage div, .stMarkdown {
         color: #1a202c !important;
+    }
+    /* Fix to ensure code snippets and multi-line pre blocks are legible against light backdrop */
+    code, pre {
+        color: #2d3748 !important;
+        background-color: #edf2f7 !important;
     }
     .stChatMessage {
         border-radius: 12px;
@@ -57,6 +62,9 @@ def format_latex_for_streamlit(text: str) -> str:
     Translates raw block/inline LaTeX formats, structural anomalies, 
     and blockquote markings into Streamlit-native math delimiters ($ and $$).
     """
+    if not text:
+        return ""
+        
     # Clean up standard LLM formatting debris or blockquote characters
     text = text.replace("> ", "").replace(" >", "")
     
@@ -73,13 +81,14 @@ def format_latex_for_streamlit(text: str) -> str:
     text = re.sub(r'\\\((.*?)\\\)', r'$\1$', text)
     return text
 
-# Fetch API Key securely
+# Fetch API Key securely from secrets configuration
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 
 if not GROQ_API_KEY:
     st.error("⚠️ Error: GROQ_API_KEY is missing from your Streamlit secrets vault.")
     st.stop()
 
+# Instantiate the standard API client connection safely
 client = Groq(api_key=GROQ_API_KEY)
 
 # Header Section
@@ -92,7 +101,7 @@ if "messages" not in st.session_state:
 
 # Sidebar Controls & Model Selector
 with st.sidebar:
-    # Universal App Branding Block (FIXED: Explicit grid layout array prevents mixin crash)
+    # Universal App Branding Block
     logo_path = "assets/logo.png"
     if os.path.exists(logo_path):
         col1, col2 = st.columns([1, 4])
@@ -141,24 +150,28 @@ with st.sidebar:
     st.caption(f"Active Model: {selected_model_name}")
     st.caption("Status: 🟢 Online & Optimized")
 
-# Display historical messages
+# Display historical messages in viewport chronological sequence
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
+        # Always output context safely cleaned by the formatting adapter
         st.markdown(format_latex_for_streamlit(msg["content"]))
 
 # Chat Input & Processing Loop
 if user_input := st.chat_input("Type your message here..."):
-    # Combine prompt with uploaded file context if present
+    
+    # Render user message instantly to the local screen context
+    with st.chat_message("user"):
+        st.markdown(user_input)
+        
+    # Append the raw interface message cleanly to your history log
+    st.session_state.messages.append({"role": "user", "content": user_input})
+
+    # Prepare active payload context isolation layer
     active_payload = user_input
     if document_context:
         active_payload = f"{user_input}\n\n--- ATTACHED DOCUMENT ({uploaded_file.name}) ---\n{document_context}"
 
-    # Render user message
-    with st.chat_message("user"):
-        st.markdown(user_input)
-    st.session_state.messages.append({"role": "user", "content": active_payload})
-
-    # Fast intent classification (Gatekeeper) with robust error handling
+    # Fast intent classification (Gatekeeper) with safe error isolation boundaries
     gatekeeper_prompt = (
         f"Analyze this input: '{user_input}'. Is this a simple everyday query or casual chat, "
         "or does it require deep structural reasoning or coding logic? "
@@ -171,6 +184,7 @@ if user_input := st.chat_input("Type your message here..."):
             model=selected_model,
             messages=[{"role": "system", "content": gatekeeper_prompt}]
         )
+        # PRODUCTION FIXED: Access properties via explicit choice mapping index array 0
         if gatekeeper_res.choices and gatekeeper_res.choices[0].message.content:
             routing_decision = gatekeeper_res.choices[0].message.content.strip().upper()
     except Exception as e:
@@ -184,6 +198,7 @@ if user_input := st.chat_input("Type your message here..."):
                     model=selected_model,
                     messages=[{"role": "system", "content": f"Formulate a brief strategy to answer: {user_input}"}]
                 )
+                # PRODUCTION FIXED: Added zero-index selection to prevent API runtime property drops
                 if reflection_res.choices and reflection_res.choices[0].message.content:
                     internal_thought = reflection_res.choices[0].message.content
                 else:
@@ -206,8 +221,13 @@ if user_input := st.chat_input("Type your message here..."):
         )
 
         chat_messages = [{"role": "system", "content": system_prompt}]
-        for m in st.session_state.messages:
+        
+        # Load historical conversation elements up to the last turn context
+        for m in st.session_state.messages[:-1]:
             chat_messages.append({"role": m["role"], "content": m["content"]})
+            
+        # Append latest user interaction turn with attached parsing context loaded
+        chat_messages.append({"role": "user", "content": active_payload})
 
         try:
             stream = client.chat.completions.create(
