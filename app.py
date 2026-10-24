@@ -91,27 +91,43 @@ def format_latex_for_streamlit(text: str) -> str:
 @st.cache_resource
 def get_firestore_client():
     """
-    Safely unpacks the raw stringified Firebase data chunk directly from 
-    the Streamlit cloud console dashboard, correcting line break formatting seamlessly.
+    Safely unpacks the raw stringified Firebase dashboard chunk using explicit 
+    regex filters to completely bypass JSON string escape parsing errors.
     """
     try:
-        import json
-
-        # Read the raw single line text parameter string block
         raw_json_string = st.secrets.get("FIREBASE_JSON_DATA")
         if not raw_json_string:
             st.error("⚠️ Configuration Error: FIREBASE_JSON_DATA is missing from secrets.")
             return None
 
-        # Parse string block directly into a Python dictionary mapping array
-        credentials_dict = json.loads(raw_json_string)
+        # Robust regex parser to extract the private key string regardless of escape blocks
+        key_match = re.search(r'"private_key":\s*"(.*?)"', raw_json_string)
+        if not key_match:
+            st.error("⚠️ Configuration Error: Could not extract private key from data block.")
+            return None
+            
+        raw_key_content = key_match.group(1)
+        
+        # Clean up double-escaped literal \n sequences into true system breaks
+        cleaned_key = "\n".join(raw_key_content.split("\\n"))
 
-        # Failsafe: Clean up double-escaped literal newlines for the authorization cryptography library
-        if "private_key" in credentials_dict:
-            credentials_dict["private_key"] = credentials_dict["private_key"].replace("\\n", "\n")
+        # Explicitly build the payload dictionary map expected by the Google credential loader
+        credentials_dict = {
+            "type": "service_account",
+            "project_id": "pingai-1",
+            "private_key_id": "08e4f3d6d73e27a5d586b9d266a5821956312ef9",
+            "private_key": cleaned_key,
+            "client_email": "firebase-adminsdk-fbsvc@://gserviceaccount.com",
+            "client_id": "112961164706876161402",
+            "auth_uri": "https://google.com",
+            "token_uri": "https://googleapis.com",
+            "auth_provider_x509_cert_url": "https://googleapis.com",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40://gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+        }
 
         creds = service_account.Credentials.from_service_account_info(credentials_dict)
-        return firestore.Client(credentials=creds, project=credentials_dict.get("project_id"))
+        return firestore.Client(credentials=creds, project=credentials_dict["project_id"])
     except Exception as e:
         st.error(f"Failed to connect to Firebase database cloud storage: {e}")
         return None
