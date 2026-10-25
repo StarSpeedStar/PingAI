@@ -91,26 +91,32 @@ def format_latex_for_streamlit(text: str) -> str:
 @st.cache_resource
 def get_firestore_client():
     """
-    Temporary tool to help convert your raw downloaded JSON file into a single line string.
+    Production Engine: Loads the perfectly preserved flat string directly 
+    from secrets and instantiates a clean Firebase Firestore connection.
     """
-    st.info("ℹ️ Diagnostic Mode: Use the 'Attach a file' tool in the sidebar to upload your raw downloaded Firebase service account .json file!")
-    
-    # Check if a file is uploaded in your sidebar
-    if 'uploaded_file' in globals() and uploaded_file is not None:
-        try:
-            # Read the unedited text exactly as it was downloaded from Google
-            uploaded_file.seek(0)
-            raw_bytes = uploaded_file.read()
-            raw_text = raw_bytes.decode("utf-8")
-            
-            # Clean up newlines inside the file payload natively
-            flattened_json = raw_text.replace("\n", "\\n").replace("\r", "")
-            
-            st.success("🎉 Success! Copy the exact line below and paste it into your Streamlit Cloud Secrets dashboard:")
-            st.code(f"FIREBASE_RAW_JSON = '{flattened_json}'")
-        except Exception as e:
-            st.error(f"Could not convert file: {e}")
-    return None
+    try:
+        import json
+
+        # Fetch the flat string sequence
+        raw_json_payload = st.secrets.get("FIREBASE_RAW_JSON")
+        if not raw_json_payload:
+            # Fallback silently or output configuration notice if empty
+            return None
+
+        # Standardize double-escaped structural newlines cleanly across systems
+        fixed_string = raw_json_payload.replace("\\\\n", "\\n")
+        
+        # Parse the clean text string straight into a working credential map dictionary
+        credentials_dict = json.loads(fixed_string)
+        
+        if "private_key" in credentials_dict:
+            credentials_dict["private_key"] = credentials_dict["private_key"].replace("\\n", "\n")
+
+        creds = service_account.Credentials.from_service_account_info(credentials_dict)
+        return firestore.Client(credentials=creds, project=credentials_dict.get("project_id"))
+    except Exception as e:
+        st.error(f"Failed to connect to Firebase database cloud storage: {e}")
+        return None
 
 
 def save_feedback_to_firebase(rating: int, comments: str):
